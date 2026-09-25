@@ -140,16 +140,7 @@ def load_from_hackmd(
         return response_dict["content"]
 
 
-def get_year_from_path(path: Path) -> int | None:
-    """Finds the year in a Path."""
-    year = None
-    for part in path.parts:
-        if part.isdigit() and len(part) == 4:
-            year = int(part)
-    return year
-
-
-def get_date_from_heading(heading: str, default_year: int) -> date | None:
+def get_date_from_heading(heading: str) -> date | None:
     """Attempts to extract a date from a Level 1 Heading (#)."""
     match = HEADING_WITH_DATE_RE.match(heading)
 
@@ -159,26 +150,24 @@ def get_date_from_heading(heading: str, default_year: int) -> date | None:
         text = re.sub(r"\bSept\b", "Sep", text)
         text = re.sub(r",\s+", " ", text)
 
-        for value in (text, f"{text} {default_year}"):
-            for fmt in [
-                "%m/%d/%y",  # 8/25/82
-                "%m/%d/%Y",  # 8/25/1982
-                "%B %d %Y",  # August 25 1982
-                "%b %d %Y",  # Aug 25 1982
-                "%d %B %Y",  # 25 August 1982
-                "%d %b %Y",  # 25 Aug 1982
-            ]:
-                try:
-                    return date.strptime(value, fmt)
-                except ValueError:
-                    pass
+        for fmt in [
+            "%m/%d/%y",  # 8/25/82
+            "%m/%d/%Y",  # 8/25/1982
+            "%B %d %Y",  # August 25 1982
+            "%b %d %Y",  # Aug 25 1982
+            "%d %B %Y",  # 25 August 1982
+            "%d %b %Y",  # 25 Aug 1982
+        ]:
+            try:
+                return date.strptime(text, fmt)
+            except ValueError:
+                pass
 
     return None
 
 
 def get_meetings_from_lines(
     lines: list[str],
-    year: int,
     filename: str
 ) -> list[Meeting]:
     meetings = []
@@ -186,7 +175,7 @@ def get_meetings_from_lines(
 
     for line in lines:
         if match := HEADING_RE.match(line):
-            date = get_date_from_heading(line, year)
+            date = get_date_from_heading(line)
 
             if date is None:
                 raise ValueError(
@@ -209,9 +198,7 @@ def get_meetings_from_archive_path(path: Path) -> list[Meeting]:
     if len(lines) == 0 or HEADING_RE.match(lines[0]) is None:
         raise ValueError(f"{path.name}: Could not find first heading")
 
-    year = get_year_from_path(path)
-
-    return get_meetings_from_lines(lines[1:], year, path.name)
+    return get_meetings_from_lines(lines[1:], path.name)
 
 
 def get_document_from_hackmd_note(note_id: str, contents: str) -> Document:
@@ -236,23 +223,10 @@ def get_document_from_hackmd_note(note_id: str, contents: str) -> Document:
     except StopIteration:
         end = len(lines)
 
-    today = date.today()
-    meetings = get_meetings_from_lines(lines[start+1:end], today.year, note_id)
-    for meeting in meetings:
-        if meeting.date > today:
-            if today.month in (1, 2) and meeting.date.month in (11, 12):
-                meeting.date = date(
-                    today.year - 1,
-                    meeting.date.month,
-                    meeting.date.day
-                )
-            else:
-                raise ValueError(f"{note_id}: Date in the future: {meeting.date}")
-
     return Document(
         "\n".join(lines[:start + 1]),
         "\n".join(lines[end:]),
-        meetings
+        get_meetings_from_lines(lines[start+1:end], note_id)
     )
 
 
